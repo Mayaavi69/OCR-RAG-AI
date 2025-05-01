@@ -1,0 +1,8 @@
+streamlit>=1.26
+chromadb>=0.4.22
+langchain>=0.2.0
+langchain-community>=0.0.6
+langchain-ollama>=0.1.0
+langchain-chroma>=0.1.0
+ollama>=0.1.8
+requests
