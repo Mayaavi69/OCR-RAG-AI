@@ -66,9 +66,10 @@ chroma_client = PersistentClient(
     tenant=DEFAULT_TENANT,
     database=DEFAULT_DATABASE
 )
-collection   = chroma_client.get_or_create_collection(name="docs")
+collection = chroma_client.get_or_create_collection(name="docs")
+
 embedding_fn = OllamaEmbeddings(model="nomic-embed-text")
-vectorstore  = Chroma(
+vectorstore = Chroma(
     client_settings=settings,
     collection_name="docs",
     embedding_function=embedding_fn
@@ -79,12 +80,11 @@ def load_index():
     if os.path.exists(UPLOAD_INDEX):
         return json.load(open(UPLOAD_INDEX, "r"))
     return {}
+
 def save_index(idx):
     json.dump(idx, open(UPLOAD_INDEX, "w"), indent=2)
 
 uploads = load_index()
-
-# Initialize chat history
 if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
@@ -106,15 +106,16 @@ def insert_chunks(chunks, fid, fname):
     ts = datetime.utcnow().isoformat()
     for idx, chunk in enumerate(chunks):
         txt = chunk.get("text", "").strip()
-        if txt:
-            texts.append(txt)
-            metas.append({
-                "file_id": fid,
-                "filename": fname,
-                "chunk_index": idx,
-                "timestamp": ts
-            })
-            ids.append(f"{fid}_{idx}")
+        if not txt:
+            continue
+        texts.append(txt)
+        metas.append({
+            "file_id": fid,
+            "filename": fname,
+            "chunk_index": idx,
+            "timestamp": ts
+        })
+        ids.append(f"{fid}_{idx}")
     if texts:
         vectorstore.add_texts(texts, metadatas=metas, ids=ids)
 
@@ -138,6 +139,7 @@ def llm_query(model, prompt):
 header = st.empty()
 header.title("🧠 AI File Manager")
 
+# ---- SIDEBAR ----
 with st.sidebar:
     st.header("📂 Uploaded Files")
     filenames = list(uploads.values())
@@ -149,8 +151,7 @@ with st.sidebar:
         for fid in selected_file_ids:
             uploads.pop(fid, None)
         save_index(uploads)
-        st.success("Deleted selected files and their chunks. Please refresh to update list.")
-
+        st.success("Deleted selected files and their chunks. Refresh to update.")
     st.markdown("---")
     st.header("🗨️ Chat History")
     if st.button("🗑️ Clear Chat History"):
@@ -167,21 +168,31 @@ with st.sidebar:
             st.markdown(f"**A:** {history[i]['answer']}")
     else:
         st.info("No chat history yet.")
+    st.markdown("---")
+    st.subheader("📝 Steps to Use")
+    st.markdown(
+        """
+<small>
+**Step 1:** Select or drag & drop PDF files using the file uploader above.<br/>
+**Step 2:** Click **Process & Store Files** to OCR and index (one-time process).<br/>
+**Step 3:** Refresh to see chunk counts and select files under *Uploaded Files*.<br/>
+**Step 4:** Click **Summarize Selected Files** to generate summaries.<br/>
+**Step 5:** Use the chatbot below to ask questions on your files.<br/>
+</small>
+""", unsafe_allow_html=True
+    )
 
-# Metrics & Model Selection
-g1, g2, g3 = st.columns([2,1,1])
-with g1:
+# ---- MAIN CONTENT ----
+col1, col2, col3 = st.columns([2,1,1])
+with col1:
     model = st.selectbox("LLM Model", ["llama3.2:latest", "mistral:latest", "phi4:latest"], index=2)
-with g2:
+with col2:
     st.metric("Files", len(uploads))
-with g3:
+with col3:
     st.metric("Chunks", collection.count())
-
-# OCR Settings
 with st.expander("⚙️ OCR Settings"):
     ocr_langs = st.multiselect("OCR Languages", ["eng","hin","ben","tam"], default=["eng"])
 
-# Placeholder for overlay
 overlay = st.empty()
 
 # File Upload & Processing (form)
@@ -222,7 +233,7 @@ if selected_file_ids and st.button("📝 Summarize Selected Files"):
             prompt = f"Provide a detailed summary (max {MAX_TOKENS} tokens) for the document '{fname}':" + text
             summ = llm_query(model, prompt)
             st.markdown(f"### Summary for {fname}")
-            st.write(summ)
+            st.text_area(f"Summary for {fname}", summ, height=200)
             st.download_button(
                 label=f"Download Summary for {fname}",
                 data=summ,
@@ -232,9 +243,13 @@ if selected_file_ids and st.button("📝 Summarize Selected Files"):
 
 # Chatbot: RAG & General
 st.subheader("💬 Chatbot")
-mode = st.radio("Mode", ["RAG", "General"], horizontal=True)
-query = st.text_input("Your question...")
-if query:
+# Chat within a form for an Ask button
+with st.form("chat_form"):
+    mode = st.radio("Mode", ["RAG", "General"], horizontal=True)
+    query = st.text_input("Your question...")
+    ask_button = st.form_submit_button("Ask")
+
+if ask_button and query:
     header.title("⏳ Generating Answer...")
     with st.spinner("Running query... Please wait..."):
         if mode == "RAG":
@@ -249,8 +264,14 @@ if query:
             result = qa({"query": query})
             answer = result["result"]
             sources = result.get("source_documents", [])[:TOP_K]
-            st.subheader("🧠 Answer")
-            st.write(answer)
+        else:
+            answer = llm_query(model, query)
+            sources = []
+
+        st.subheader("🧠 Answer")
+        st.text_area("Answer", answer, height=200)
+
+        if sources:
             st.subheader("🔍 Top Chunks Used")
             for doc in sources:
                 idx = doc.metadata.get("chunk_index")
@@ -258,9 +279,6 @@ if query:
                 with st.expander(f"Chunk {idx} (File: {fname})"):
                     st.write(doc.page_content)
                     st.json(doc.metadata)
-        else:
-            answer = llm_query(model, query)
-            st.subheader("🧠 Answer")
-            st.write(answer)
+
         st.session_state['chat_history'].append({"query": query, "answer": answer})
     header.title("🧠 AI File Manager")
