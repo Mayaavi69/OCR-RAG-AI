@@ -19,3 +19,14 @@ This document explains how to package your Streamlit-based Python app into a Doc
 2. **Build the image**:
    ```bash
    docker build -t ai-file-manager:latest .
+
+
+UNSTRUCTURE
+
+docker run -p 9500:9500 -d --rm --name unstructured-api -e PORT=9500 downloads.unstructured.io/unstructured-io/unstructured-api:latest
+
+
+
+#unstructured io command that works
+
+http://localhost:9500/general/v0/general

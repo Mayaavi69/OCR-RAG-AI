@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  unstructured-api:
+    image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
+    container_name: unstructured-api
+    environment:
+      - PORT=9500
+    ports:
+      - "9500:9500"
+    restart: unless-stopped
